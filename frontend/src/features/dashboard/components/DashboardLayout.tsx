@@ -2,19 +2,13 @@ import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { SessionModal } from '../../auth/components/SessionModal';
 import { useFetchSessionsQuery } from '../../auth/hooks/useAuthMutations';
-import { useQuery } from '@tanstack/react-query';
-import { axiosClient } from '../../../api/axiosClient';
+import { WorkspaceDashboard } from '../../projects/components/WorkspaceDashboard';
 import {
-  User,
-  Shield,
   FolderKanban,
   Activity,
   LogOut,
   Settings,
   HelpCircle,
-  Plus,
-  Loader2,
-  Calendar,
   Layers
 } from 'lucide-react';
 
@@ -49,16 +43,7 @@ export const DashboardLayout: React.FC = () => {
     { label: 'Documentation', href: '#help', icon: HelpCircle },
   ];
 
-  // Fetch workspaces using React Query to demonstrate live backend integration
-  const { data: projects = [], isLoading: loadingProjects } = useQuery<any[]>({
-    queryKey: ['projects'],
-    queryFn: async () => {
-      const response = await axiosClient.get('/projects');
-      return response.data.data;
-    },
-    retry: 1,
-    refetchOnWindowFocus: false,
-  });
+  // Projects query removed as it is now managed inside WorkspaceDashboard component
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
@@ -142,72 +127,8 @@ export const DashboardLayout: React.FC = () => {
         </aside>
 
         {/* Right Content Pane: Project Workspace list */}
-        <main className="flex-1 space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-white">Project Workspaces</h2>
-            </div>
-
-            <button className="flex items-center gap-1.5 bg-brand-600 hover:bg-brand-500 active:bg-brand-700 text-white font-medium py-2 px-3.5 rounded-lg text-sm transition-colors shadow-md shadow-brand-600/15">
-              <Plus className="w-4 h-4" />
-              <span>New Workspace</span>
-            </button>
-          </div>
-
-          {loadingProjects ? (
-            /* Skeleton Workspaces */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="glass-card rounded-2xl p-5 space-y-3 animate-pulse">
-                  <div className="h-4 w-1/2 bg-slate-800 rounded"></div>
-                  <div className="h-3 w-3/4 bg-slate-800 rounded"></div>
-                  <div className="h-8 w-24 bg-slate-800 rounded mt-4"></div>
-                </div>
-              ))}
-            </div>
-          ) : projects.length === 0 ? (
-            /* Empty State */
-            <div className="glass-card rounded-2xl p-8 text-center border-dashed border-slate-800">
-              <div className="w-12 h-12 rounded-xl bg-slate-900/80 flex items-center justify-center text-slate-500 mx-auto mb-4 border border-slate-800">
-                <FolderKanban className="w-6 h-6" />
-              </div>
-              <h3 className="text-base font-semibold text-slate-200">No active workspaces</h3>
-              <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1.5 leading-relaxed">
-                Create a new workspace using the button above to begin collaborating and tracking timeline audit logs.
-              </p>
-            </div>
-          ) : (
-            /* Active Workspaces */
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {projects.map((project) => (
-                <div
-                  key={project.projectId}
-                  className="glass-card rounded-2xl p-5 hover:border-slate-700/80 transition-all duration-300 flex flex-col justify-between group cursor-pointer"
-                >
-                  <div>
-                    <div className="flex items-center justify-between mb-2.5">
-                      <span className="font-semibold text-slate-100 group-hover:text-brand-300 transition-colors">
-                        {project.name}
-                      </span>
-                      {project.isArchived && (
-                        <span className="text-[9px] uppercase tracking-wider font-bold bg-amber-500/10 text-amber-400 px-2 py-0.5 rounded border border-amber-500/20">
-                          Archived
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
-                      {project.description || 'No description provided.'}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-5 border-t border-slate-900 pt-3">
-                    <Calendar className="w-3 h-3" />
-                    <span>Created: {new Date(project.createdAt).toLocaleDateString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+        <main className="flex-1 overflow-x-hidden">
+          <WorkspaceDashboard />
         </main>
       </div>
 

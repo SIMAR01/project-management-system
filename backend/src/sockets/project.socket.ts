@@ -59,6 +59,32 @@ export const evictUserFromProject = (projectId: string, userId: string): void =>
 };
 
 /**
+ * Direct real-time notification to the socket connection of the newly invited user.
+ *
+ * @param projectId The unique project UUID.
+ * @param userId The unique user UUID of the invited member.
+ * @param project The project object data.
+ */
+export const notifyUserOfInvite = (projectId: string, userId: string, project: any): void => {
+  if (!ioInstance) {
+    console.warn("[Socket] Failed to notify user of invite: ioInstance is not set");
+    return;
+  }
+
+  console.log(`[Socket] Notifying user '${userId}' of invite to project '${projectId}'`);
+
+  const activeSockets = ioInstance.sockets.sockets;
+
+  for (const socket of activeSockets.values()) {
+    const socketUser = (socket as any).user;
+    if (socketUser && socketUser.id === userId) {
+      socket.emit("workspace:invited", { projectId, project });
+      console.log(`[Socket] Notified socket connection: ${socket.id} (User: ${userId})`);
+    }
+  }
+};
+
+/**
  * Connects the project room membership listeners during connection lifecycle hooks.
  */
 export const registerProjectSocketHandlers = (io: Server, socket: Socket): void => {

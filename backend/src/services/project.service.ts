@@ -2,7 +2,7 @@ import { Project, IProject } from "../models/project.model";
 import { User } from "../models/user.model";
 import { ApiError } from "../utils/ApiError";
 import { EventService } from "./event.service";
-import { emitProjectEvent, evictUserFromProject } from "../sockets/project.socket";
+import { emitProjectEvent, evictUserFromProject, notifyUserOfInvite } from "../sockets/project.socket";
 import { ProjectEvent } from "../models/projectEvent.model";
 
 export class ProjectService {
@@ -205,7 +205,7 @@ export class ProjectService {
       actorId
     );
 
-    // Notify existing members
+    // Notify existing project room members
     emitProjectEvent(projectId, "member:invited", {
       projectId,
       member: {
@@ -215,6 +215,10 @@ export class ProjectService {
         role,
       },
     });
+
+    // Directly notify the newly invited user's active socket sessions
+    // so the project appears in their workspace list without a page refresh.
+    notifyUserOfInvite(projectId, inviteeId, updatedProject);
 
     return updatedProject;
   }
