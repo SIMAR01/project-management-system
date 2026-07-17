@@ -9,6 +9,7 @@ import {
   inviteMemberSchema,
   removeMemberSchema,
 } from "../validations/project.validation";
+import taskRouter from "./task.routes";
 
 const router = Router();
 
@@ -16,6 +17,12 @@ const router = Router();
 router.get("/", ProjectController.list);
 router.get("/created", ProjectController.listCreated);
 router.post("/", idempotencyMiddleware, validate(createProjectSchema), ProjectController.create);
+
+// ─── Task Subrouter ───────────────────────────────────────────────────────────
+// Mount task routes under /:projectId/tasks.
+// checkMembership runs first — validates project existence + user membership,
+// then passes control to the task subrouter for all task-level operations.
+router.use("/:projectId/tasks", checkMembership, taskRouter);
 
 // Project specific reads (accessible to any workspace member)
 router.get("/:projectId", checkMembership, ProjectController.getDetails);
