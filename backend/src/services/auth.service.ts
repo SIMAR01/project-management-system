@@ -188,23 +188,29 @@ export class AuthService {
     }
 
     if (!tokenMatched) {
-      // Security warning: possible token reuse, clear all sessions as precaution
-      user.refreshTokens = [];
-      await user.save();
+      // If the session was active in Redis but the token did not match, it's a potential reuse attack
+      if (sessionExists) {
+        // Security warning: possible token reuse, clear all sessions as precaution
+        user.refreshTokens = [];
+        await user.save();
 
-      // Scan and delete all sessions from Redis
-      const pattern = `session:${userId}:*`;
-      let cursor = "0";
-      do {
-        const reply = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
-        cursor = reply.cursor;
-        const keys = reply.keys;
-        if (keys.length > 0) {
-          await redisClient.del(keys);
-        }
-      } while (cursor !== "0");
+        // Scan and delete all sessions from Redis
+        const pattern = `session:${userId}:*`;
+        let cursor = "0";
+        do {
+          const reply = await redisClient.scan(cursor, { MATCH: pattern, COUNT: 100 });
+          cursor = reply.cursor;
+          const keys = reply.keys;
+          if (keys.length > 0) {
+            await redisClient.del(keys);
+          }
+        } while (cursor !== "0");
 
-      throw new ApiError(401, "Invalid or expired session / potential reuse detected");
+        throw new ApiError(401, "Invalid session state detected / potential reuse warning");
+      }
+
+      // If the session didn't exist at all, it was just evicted / logged out
+      throw new ApiError(401, "Session has been logged out or evicted");
     }
 
     // 4. Generate rotated tokens (maintaining the same sessionId)
@@ -267,6 +273,7 @@ export class AuthService {
       user.refreshTokens.shift();
     }
 
+    user.markModified("refreshTokens");
     await user.save();
 
     return {
@@ -360,6 +367,7 @@ export class AuthService {
             }
           }
           user.refreshTokens = filteredTokens;
+          user.markModified("refreshTokens");
           await user.save();
         }
       } catch (err) {
@@ -400,12 +408,26 @@ export class AuthService {
           }
         }
         user.refreshTokens = filteredTokens;
+        user.markModified("refreshTokens");
         await user.save();
       }
     }
 
+    // Determine if we should blacklist the current access token
+    let shouldBlacklistCurrent = true;
+    if (sessionIdToLogout && plainRefreshToken) {
+      try {
+        const decoded = verifyRefreshToken(plainRefreshToken);
+        if (decoded.sessionId !== sessionIdToLogout) {
+          shouldBlacklistCurrent = false;
+        }
+      } catch (err) {
+        // If current refresh token is invalid, blacklist anyway
+      }
+    }
+
     // 3. Blacklist current Access Token in Redis
-    if (accessToken) {
+    if (accessToken && shouldBlacklistCurrent) {
       try {
         const decoded = jwt.decode(accessToken) as { exp?: number };
         if (decoded && decoded.exp) {
@@ -421,6 +443,7 @@ export class AuthService {
         console.error("Failed to store access token in Redis blacklist:", error);
       }
     }
+
 
     return {
       loggedOutSessions,

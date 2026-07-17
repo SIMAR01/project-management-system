@@ -3,15 +3,16 @@ import cors from "cors";
 import router from "./routes/index";
 import { errorHandler } from "./middleware/error.middleware";
 import { ApiError } from "./utils/ApiError";
-import { authRateLimiter } from "./middleware/rateLimit.middleware";
 
 const app = express();
 
 // Global Middlewares
 app.use(
   cors({
-    origin: process.env.CORS_ORIGIN || "*",
+    origin: "http://localhost:3000",
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(express.json({ limit: "16kb" }));
@@ -25,8 +26,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Protect all Authentication endpoints with our custom Redis rate limiter
-app.use("/api/v1/auth", authRateLimiter);
+
 
 // Versioned API Routes
 app.use("/api/v1", router);
