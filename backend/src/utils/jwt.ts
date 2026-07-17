@@ -48,6 +48,12 @@ export const verifyAccessToken = (token: string): UserTokenPayload => {
     return jwt.verify(token, JWT_SECRET) as UserTokenPayload;
   } catch (error: any) {
     if (error.name === "TokenExpiredError") {
+      const decoded = jwt.decode(token) as any;
+      if (decoded && decoded.exp) {
+        console.warn(
+          `[JWT] Access token expired. Server Time: ${new Date().toISOString()} | Token Expired At: ${new Date(decoded.exp * 1000).toISOString()}`
+        );
+      }
       throw new ApiError(401, "Access token has expired");
     }
     throw new ApiError(401, "Invalid access token");

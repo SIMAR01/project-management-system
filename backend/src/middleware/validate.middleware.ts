@@ -13,9 +13,9 @@ export const validate = (schema: ZodObject) => {
     try {
       // Parse and validate the request
       const parsed = await schema.parseAsync({
-        body: req.body,
-        query: req.query,
-        params: req.params,
+        body: req.body || {},
+        query: req.query || {},
+        params: req.params || {},
       });
 
       // Assign parsed values back to the request object to ensure clean, type-cast data
