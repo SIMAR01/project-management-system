@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
+import { useAuth } from "../../../context/AuthContext";
 import { getAccessToken } from "../../../api/axiosClient";
 import { Task } from "../types/task.types";
 
@@ -10,6 +12,9 @@ import { Task } from "../types/task.types";
  */
 export const useTaskSocketSync = (projectId: string) => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const currentUserId = user?.id;
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -85,11 +90,38 @@ export const useTaskSocketSync = (projectId: string) => {
       queryClient.invalidateQueries({ queryKey: ["project-activity", projectId] });
     });
 
+    socket.on("workspace:evicted", (data: { projectId: string }) => {
+      if (data.projectId === projectId) {
+        console.log(`[Socket] Eviction detected for project ${projectId}. Redirecting to dashboard.`);
+        queryClient.removeQueries({ queryKey: ["project-tasks", projectId] });
+        queryClient.removeQueries({ queryKey: ["project-activity", projectId] });
+        navigate("/dashboard");
+      }
+    });
+
+    socket.on("member:removed", (data: { projectId: string; userId: string }) => {
+      if (data.projectId === projectId && data.userId === currentUserId) {
+        console.log(`[Socket] Member removed detected for current user on project ${projectId}. Redirecting.`);
+        queryClient.removeQueries({ queryKey: ["project-tasks", projectId] });
+        queryClient.removeQueries({ queryKey: ["project-activity", projectId] });
+        navigate("/dashboard");
+      }
+    });
+
+    socket.on("project:deleted", (data: { projectId: string }) => {
+      if (data.projectId === projectId) {
+        console.log(`[Socket] Project ${projectId} deleted. Redirecting.`);
+        queryClient.removeQueries({ queryKey: ["project-tasks", projectId] });
+        queryClient.removeQueries({ queryKey: ["project-activity", projectId] });
+        navigate("/dashboard");
+      }
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [projectId, queryClient]);
+  }, [projectId, queryClient, navigate, currentUserId]);
 
   return socketRef.current;
 };

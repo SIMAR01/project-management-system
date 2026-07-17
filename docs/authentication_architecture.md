@@ -80,7 +80,7 @@ To optimize database lookups and prevent token hijacking, Redis is used in three
 ### B. Access Token Blacklist
 - **Key Schema**: `blacklist:{accessToken}`
 - **Value**: `"true"`
-- **TTL**: Dynamic (Equal to the remaining duration of the Access Token's 15-minute lifespan)
+- Blacklist TTL: Dynamic (Equal to the remaining duration of the Access Token's 4-hour lifespan)
 - **Flow**: When a user logs out, the access token is cached in Redis for its remaining lifetime. Any request attempting to use a blacklisted token will be rejected with an HTTP 401 response by `auth.middleware.ts`.
 
 ### C. Rate Limiter Tracker

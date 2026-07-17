@@ -608,7 +608,7 @@ export const WorkspaceDashboard: React.FC = () => {
                     className="w-full px-3.5 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-brand-500"
                   >
                     <option value="TeamMember">TeamMember</option>
-                    <option value="ProjectManager">ProjectManager</option>
+                    {/* <option value="ProjectManager">ProjectManager</option> */}
                   </select>
                 </div>
                 <button

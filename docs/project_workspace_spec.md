@@ -14,6 +14,7 @@ Each project document tracks its workspace attributes, owner metadata, member ro
 - `description`: **String**. Optional.
 - `owner`: **String (UUID)**. References `User.uuid.id`.
 - `isArchived`: **Boolean** (default `false`).
+- `isDeleted`: **Boolean** (default `false`).
 - `members`: **Array** of subdocuments:
   - `userId`: **String (UUID)**. References `User.uuid.id`.
   - `role`: **String**. Options: `'ProjectManager'` or `'TeamMember'`.
@@ -169,7 +170,10 @@ Requires `'ProjectManager'` role. Prevents updates and member invitations on arc
   ```
 
 ### G. Delete Workspace (`DELETE /api/v1/projects/:projectId`)
-Permanently deletes the workspace in MongoDB. Logs a final `'PROJECT_DELETED'` audit log. Requires `'ProjectManager'` role.
+Requires `'ProjectManager'` role.
+- **Underlying Logic**:
+  - If the project contains 0 tasks, it is permanently deleted (`deleteOne`) from MongoDB.
+  - If the project has tasks, it is soft-deleted/archived (`updateOne({ isDeleted: true })`) and all its tasks are soft-deleted.
 - **Success Response (200)**:
   ```json
   {
@@ -263,12 +267,12 @@ Chronological history timeline of all mutations. Returns detailed actor profiles
 - `member:removed` (user removed from members array)
 
 ### Eviction Control
-- When a user is removed via `POST /api/v1/projects/:projectId/remove`, the backend searches active connections, removes the client's socket connection from the room `project:${projectId}` automatically, and emits a private message:
-  ```javascript
-  socket.on("workspace:evicted", ({ projectId }) => {
-     // Trigger frontend client eviction callback, reset workspace active UI state
-  });
-  ```
+- When a user is removed via `POST /api/v1/projects/:projectId/remove`, the backend searches active connections, removes the client's socket connection from the room `project:${projectId}` automatically, and emits a private event:
+  - Event: `"workspace:evicted"`
+  - Payload: `{ projectId }`
+- On receiving `"workspace:evicted"` or `"member:removed"` (for the current user) on any active socket channel (including `useTaskSocketSync` on the Kanban Board page), the frontend:
+  1. Purges the cached query query state: `queryClient.removeQueries(["project-tasks", projectId])`.
+  2. Instantly redirects the user to the dashboard page: `navigate("/dashboard")`.
 
 ---
 

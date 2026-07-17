@@ -1,5 +1,24 @@
 services:
 
+  frontend:
+    build:
+      context: ./frontend
+
+    container_name: frontend
+
+    ports:
+      - "3000:3000"
+
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - ./.env:/app/.env
+
+    depends_on:
+      - backend
+
+    command: npm run dev
+
   backend:
     build:
       context: ./backend
@@ -33,25 +52,6 @@ services:
     volumes:
       - mongo-data:/data/db
 
-  mongo-express:
-    image: mongo-express:latest
-    container_name: mongo-express
-
-    restart: unless-stopped
-
-    depends_on:
-      - mongodb
-
-    ports:
-      - "8081:8081"
-
-    environment:
-      ME_CONFIG_MONGODB_SERVER: mongodb
-      ME_CONFIG_MONGODB_PORT: 27017
-
-      # Disable login screen for local development
-      ME_CONFIG_BASICAUTH: "false"    
-
   redis:
     image: redis:8-alpine
 
@@ -63,22 +63,6 @@ services:
     volumes:
       - redis-data:/data
 
-  redis-insight:
-    image: redis/redisinsight:latest
-    container_name: redis-insight
-
-    restart: unless-stopped
-
-    depends_on:
-      - redis
-
-    ports:
-      - "5540:5540"
-
-    volumes:
-      - redis-insight-data:/data
-
 volumes:
   mongo-data:
   redis-data:
-  redis-insight-data:
