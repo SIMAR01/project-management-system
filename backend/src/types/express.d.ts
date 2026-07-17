@@ -6,6 +6,8 @@ declare namespace Express {
     token?: string;
     // The current project document resolved by RBAC / membership middleware
     project?: import("../models/project.model").IProject;
+    // The current task document resolved by task-level middleware (optional)
+    task?: import("../models/task.model").ITask;
   }
 }
 
