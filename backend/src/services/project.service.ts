@@ -1,9 +1,11 @@
 import { Project, IProject } from "../models/project.model";
+import { Task } from "../models/task.model";
 import { User } from "../models/user.model";
 import { ApiError } from "../utils/ApiError";
 import { EventService } from "./event.service";
 import { emitProjectEvent, evictUserFromProject, notifyUserOfInvite } from "../sockets/project.socket";
 import { ProjectEvent } from "../models/projectEvent.model";
+import { TaskEvent } from "../models/taskEvent.model";
 
 export class ProjectService {
   /**
@@ -141,10 +143,19 @@ export class ProjectService {
       throw new ApiError(404, "Project workspace not found");
     }
 
-    await Project.deleteOne({ projectId });
+    // Check if the project has tasks inside (either active or deleted, check all tasks)
+    const taskCount = await Task.countDocuments({ projectId });
 
-    // Record event sourcing log
-    await EventService.recordEvent(projectId, "PROJECT_DELETED", {}, actorId);
+    if (taskCount === 0) {
+      // No tasks -> delete from database permanently
+      await Project.deleteOne({ projectId });
+      await EventService.recordEvent(projectId, "PROJECT_DELETED", { deletionType: "hard" }, actorId);
+    } else {
+      // Has tasks -> update "isDeleted" to true for the project and all its tasks
+      await Project.updateOne({ projectId }, { $set: { isDeleted: true } });
+      await Task.updateMany({ projectId }, { $set: { isDeleted: true } });
+      await EventService.recordEvent(projectId, "PROJECT_DELETED", { deletionType: "soft" }, actorId);
+    }
 
     // Emit deletion event to room
     emitProjectEvent(projectId, "project:deleted", { projectId });
@@ -291,14 +302,65 @@ export class ProjectService {
   }
 
   /**
-   * Retrieves the project timeline showing all chronological events.
+   * Helper to enrich projects with owner and member user profiles.
+   */
+  public static async enrichProjects(projects: any[]): Promise<any[]> {
+    if (projects.length === 0) return [];
+
+    const userIds = new Set<string>();
+    for (const p of projects) {
+      if (p.owner) userIds.add(p.owner);
+      if (p.members) {
+        for (const m of p.members) {
+          if (m.userId) userIds.add(m.userId);
+        }
+      }
+    }
+
+    const users = await User.find({ "uuid.id": { $in: Array.from(userIds) } }).lean();
+    const userMap = new Map<string, any>();
+    for (const u of users) {
+      userMap.set(u.uuid.id, u);
+    }
+
+    return projects.map((p) => {
+      const pObj = typeof p.toObject === "function" ? p.toObject() : p;
+      const ownerUser = userMap.get(pObj.owner);
+      const enrichedMembers = (pObj.members || []).map((m: any) => {
+        const memberUser = userMap.get(m.userId);
+        return {
+          ...m,
+          name: memberUser?.name || "Unknown User",
+          username: memberUser?.username || "unknown",
+          email: memberUser?.email || "",
+        };
+      });
+
+      return {
+        ...pObj,
+        ownerName: ownerUser?.name || "Unknown User",
+        ownerUsername: ownerUser?.username || "unknown",
+        ownerEmail: ownerUser?.email || "",
+        members: enrichedMembers,
+      };
+    });
+  }
+
+  /**
+   * Retrieves the project timeline showing all chronological events (both project and task events).
    */
   public static async getProjectTimeline(projectId: string): Promise<any[]> {
-    const events = await ProjectEvent.find({ projectId }).sort({ timestamp: 1 });
+    const projectEvents = await ProjectEvent.find({ projectId }).lean();
+    const taskEvents = await TaskEvent.find({ projectId }).lean();
 
     // Extract unique actor IDs to fetch details in a batch query
-    const actorIds = Array.from(new Set(events.map((e) => e.actorId)));
-    const users = await User.find({ "uuid.id": { $in: actorIds } });
+    const actorIds = Array.from(
+      new Set([
+        ...projectEvents.map((e) => e.actorId),
+        ...taskEvents.map((e) => e.userId),
+      ])
+    );
+    const users = await User.find({ "uuid.id": { $in: actorIds } }).lean();
 
     // Map profiles for quick lookup
     const userMap = new Map<string, { name: string; username: string; email: string }>();
@@ -310,17 +372,32 @@ export class ProjectService {
       });
     }
 
-    return events.map((e) => {
-      const eventObj = e.toObject();
-      return {
-        ...eventObj,
+    const mergedEvents = [
+      ...projectEvents.map((e) => ({
+        ...e,
+        id: e.eventId || (e as any)._id?.toString(),
         actor: userMap.get(e.actorId) || {
           name: "Unknown User",
           username: "unknown",
           email: "unknown@example.com",
         },
-      };
-    });
+      })),
+      ...taskEvents.map((e) => ({
+        ...e,
+        id: e.eventId || (e as any)._id?.toString(),
+        actorId: e.userId,
+        actor: userMap.get(e.userId) || {
+          name: "Unknown User",
+          username: "unknown",
+          email: "unknown@example.com",
+        },
+      })),
+    ];
+
+    // Sort chronologically (oldest first)
+    mergedEvents.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    return mergedEvents;
   }
 
   /**

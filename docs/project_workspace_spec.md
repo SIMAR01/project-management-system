@@ -401,3 +401,56 @@ This is stored in Redis with a Time-To-Live (TTL) of **300 seconds (5 minutes)**
 #### D. Non-Blocking Fail-Open Mode
 If Redis is down or unreachable during the cache lookup, the engine logs the error to `stderr` and executes `next()` to allow the controller to serve the request. This preserves API availability at the cost of temporary idempotency degradation.
 
+
+---
+
+## 6. Tasks & Task Event-Sourcing API Documentation
+
+### A. Create Task (`POST /api/v1/projects/:projectId/tasks`)
+Creates a new task.
+- **Zod Validation Body**:
+  - `title`: String (1-200 chars). Required.
+  - `description`: String (max 2000 chars). Optional.
+  - `assigneeId`: String (UUID). Optional.
+  - `status`: Enum (`todo`, `inprogress`, `underreview`, `done`). Optional.
+
+### B. Update Task (`PATCH /api/v1/projects/:projectId/tasks/:taskId`)
+Updates details of a task (title, description, assignee, status).
+- **Zod Validation Body**:
+  - `title`: String (1-200 chars). Optional.
+  - `description`: String (max 2000 chars). Optional/Nullable.
+  - `assigneeId`: String (UUID). Optional/Nullable.
+  - `status`: Enum (`todo`, `inprogress`, `underreview`, `done`). Optional.
+- **Success Response (200)**: Returns the updated task object enriched with assignee profile details (name, username, email).
+- **Real-Time Sockets**: Emits a `task:updated` event to the project socket room, containing the full enriched task. If status changes, also emits a `task:status_changed` event.
+
+### C. Fetch Task Timeline (`GET /api/v1/projects/:projectId/tasks/:taskId/events`)
+Returns the chronological activity events logged for the specific task.
+- **Event Types Logged**:
+  - `TASK_CREATED`
+  - `TASK_UPDATED` (logs `field`, `previousValue`, `newValue`)
+  - `ASSIGNEE_CHANGED` (logs `previousAssigneeId`, `newAssigneeId`)
+  - `STATUS_CHANGED` (logs `previousStatus`, `newStatus`)
+
+### D. Bulk Delete Tasks (`DELETE /api/v1/projects/:projectId/tasks/bulk`)
+Soft-deletes multiple tasks at once.
+- **Zod Validation Body**:
+  - `taskIds`: Array of valid UUID strings. Min length 1.
+- **WebSocket Broadcast**: Emits `task:bulk_deleted` to the project room containing `{ taskIds, projectId, actorId }`.
+
+---
+
+## 7. Authentication & Token Expirations Spec
+- **Access Token (JWT)**: Valid for **4 hours** (`"4h"`).
+- **Refresh Token (Cookie)**: Valid for **7 days** (`"7d"` / `7 * 24 * 60 * 60 * 1000` ms). Saved in secure HTTP-only cookies.
+
+---
+
+## 8. Resilient Project Archiving Spec
+- When a Project delete is triggered (`DELETE /api/v1/projects/:projectId`):
+  - **No Tasks Case**: If the project has 0 tasks inside, it is permanently deleted from the database.
+  - **Has Tasks Case**: If the project has tasks inside, it is archived instead:
+    - Project's `isDeleted` field is set to `true`.
+    - All tasks belonging to the project are soft-deleted (`isDeleted: true`).
+  - **UI Display**: Archived projects are displayed under a dedicated "Archived Projects" tab on the Workspace Dashboard, with open board redirect actions disabled.
+

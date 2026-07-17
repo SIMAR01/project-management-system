@@ -26,18 +26,21 @@ import {
   Loader2,
   ArrowRight,
   UserMinus,
-  Check,
   AlertCircle,
-  History
+  History,
+  KanbanSquare
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 export const WorkspaceDashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // Activate the real-time Socket.IO cache synchronization hook
   useProjectSocketSync();
 
   const { data: workspaces = [], isLoading, error } = useWorkspacesQuery();
 
+  const [activeTab, setActiveTab] = useState<"active" | "archived">("active");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProject] = useState<ProjectWorkspace | null>(null);
   const [activeActivityProjectId, setActiveActivityProjectId] = useState<string | null>(null);
@@ -180,6 +183,10 @@ export const WorkspaceDashboard: React.FC = () => {
       (w.description && w.description.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
+  const activeWorkspaces = filteredWorkspaces.filter((w) => w.isDeleted !== true);
+  const archivedWorkspaces = filteredWorkspaces.filter((w) => w.isDeleted === true);
+  const displayedWorkspaces = activeTab === "active" ? activeWorkspaces : archivedWorkspaces;
+
   return (
     <div className="space-y-6 relative min-h-screen pb-16">
       {/* Workspace Dashboard Header */}
@@ -187,7 +194,7 @@ export const WorkspaceDashboard: React.FC = () => {
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
             <FolderKanban className="w-6 h-6 text-brand-500" />
-            <span>Workspace Consoles</span>
+            <span>Workspaces</span>
           </h2>
           <p className="text-xs text-slate-400 mt-1">
             Access, build, and coordinate active project workspaces in real-time.
@@ -223,6 +230,28 @@ export const WorkspaceDashboard: React.FC = () => {
         />
       </div>
 
+      {/* Tab Selector */}
+      <div className="flex border-b border-slate-800/80 shrink-0">
+        <button
+          onClick={() => setActiveTab("active")}
+          className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${activeTab === "active"
+            ? "border-brand-500 text-brand-400 bg-brand-500/5"
+            : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+        >
+          Active Projects ({activeWorkspaces.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("archived")}
+          className={`px-5 py-2.5 text-xs font-bold uppercase tracking-wider border-b-2 transition-all ${activeTab === "archived"
+            ? "border-red-500 text-red-400 bg-red-500/5"
+            : "border-transparent text-slate-400 hover:text-slate-200"
+            }`}
+        >
+          Archived Projects ({archivedWorkspaces.length})
+        </button>
+      </div>
+
       {/* Loading Skeletons */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -251,36 +280,53 @@ export const WorkspaceDashboard: React.FC = () => {
             An error occurred while fetching your projects: {error.message || "Unknown error"}
           </p>
         </div>
-      ) : filteredWorkspaces.length === 0 ? (
+      ) : displayedWorkspaces.length === 0 ? (
         <div className="glass-card rounded-2xl p-10 text-center border-dashed border-slate-800">
           <FolderKanban className="w-10 h-10 text-slate-600 mx-auto mb-4" />
-          <h3 className="text-base font-semibold text-slate-200">No workspaces found</h3>
+          <h3 className="text-base font-semibold text-slate-200">
+            {activeTab === "active" ? "No active workspaces found" : "No archived workspaces found"}
+          </h3>
           <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1.5 leading-relaxed">
             {searchQuery
               ? "No workspaces match your query filter. Try refining your keywords."
-              : "You are not registered in any workspaces. Contact a Project Manager or create your own."}
+              : activeTab === "active"
+                ? "You do not have any active project workspaces currently."
+                : "No deleted/archived project workspaces available."}
           </p>
         </div>
       ) : (
         /* Workspaces Grid */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredWorkspaces.map((project) => {
+          {displayedWorkspaces.map((project) => {
             const isManager = isProjectManager(project);
+            const isProjectDeleted = project.isDeleted === true;
+
             return (
               <div
                 key={project.projectId}
-                className="glass-card rounded-2xl p-5 hover:border-slate-700/85 transition-all duration-300 flex flex-col justify-between group"
+                className={`glass-card rounded-2xl p-5 transition-all duration-300 flex flex-col justify-between group ${isProjectDeleted
+                  ? "border-red-500/20 bg-red-950/5 opacity-80"
+                  : "hover:border-slate-700/85"
+                  }`}
               >
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-slate-100 group-hover:text-brand-400 transition-colors">
+                    <span className={`font-semibold transition-colors ${isProjectDeleted ? "text-slate-400" : "text-slate-100 group-hover:text-brand-400"
+                      }`}>
                       {project.name}
                     </span>
-                    {project.owner === user?.id && (
-                      <span className="text-[9px] uppercase tracking-wider font-bold bg-brand-500/10 text-brand-400 px-2 py-0.5 rounded border border-brand-500/20">
-                        Owner
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {isProjectDeleted && (
+                        <span className="text-[9px] uppercase tracking-wider font-bold bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20">
+                          Archived
+                        </span>
+                      )}
+                      {project.owner === user?.id && (
+                        <span className="text-[9px] uppercase tracking-wider font-bold bg-brand-500/10 text-brand-400 px-2 py-0.5 rounded border border-brand-500/20">
+                          Owner
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
                     {project.description || "No description provided."}
@@ -302,49 +348,76 @@ export const WorkspaceDashboard: React.FC = () => {
 
                   {/* Right: Actions */}
                   <div className="flex items-center gap-2">
-                    {/* Activity Log: Accessible to all members */}
-                    <button
-                      onClick={() => setActiveActivityProjectId(project.projectId)}
-                      title="View Activity Feed"
-                      className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
-                    >
-                      <History className="w-4 h-4" />
-                    </button>
-
-                    {/* Role-Shielded Admin Tools */}
-                    {isManager && (
+                    {!isProjectDeleted ? (
                       <>
+                        {/* View Task Board: Accessible to all members */}
                         <button
-                          onClick={() => {
-                            setSelectedProject(project);
-                            resetForm();
-                            setInviteEmail("");
-                            setIsMembersOpen(true);
-                          }}
-                          title="Invite & Manage Members"
-                          className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-brand-400 hover:text-brand-300 border border-slate-800 transition-colors"
+                          onClick={() => navigate(`/dashboard/projects/${project.projectId}/tasks`)}
+                          title="Open Task Board"
+                          className="p-1.5 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 hover:text-brand-300 border border-brand-500/20 transition-colors"
                         >
-                          <UserPlus className="w-4 h-4" />
+                          <KanbanSquare className="w-4 h-4" />
                         </button>
+
+                        {/* Activity Log: Accessible to all members */}
                         <button
-                          onClick={() => {
-                            setSelectedProject(project);
-                            setName(project.name);
-                            setDescription(project.description || "");
-                            setIsEditOpen(true);
-                          }}
-                          title="Edit Workspace"
+                          onClick={() => setActiveActivityProjectId(project.projectId)}
+                          title="View Activity Feed"
                           className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
                         >
-                          <Edit2 className="w-4 h-4" />
+                          <History className="w-4 h-4" />
                         </button>
+
+                        {/* Role-Shielded Admin Tools */}
+                        {isManager && (
+                          <>
+                            <button
+                              onClick={() => {
+                                setSelectedProject(project);
+                                resetForm();
+                                setInviteEmail("");
+                                setIsMembersOpen(true);
+                              }}
+                              title="Invite & Manage Members"
+                              className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-brand-400 hover:text-brand-300 border border-slate-800 transition-colors"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedProject(project);
+                                setName(project.name);
+                                setDescription(project.description || "");
+                                setIsEditOpen(true);
+                              }}
+                              title="Edit Workspace"
+                              className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(project.projectId)}
+                              title="Delete Workspace"
+                              className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/20 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {/* Archived Project actions: only Activity Log is accessible */}
                         <button
-                          onClick={() => handleDelete(project.projectId)}
-                          title="Delete Workspace"
-                          className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-slate-800 hover:border-red-500/20 transition-colors"
+                          onClick={() => setActiveActivityProjectId(project.projectId)}
+                          title="View Activity Feed"
+                          className="p-1.5 rounded-lg bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <History className="w-4 h-4" />
                         </button>
+                        <span className="text-[10px] text-red-400 font-semibold px-2 py-1 bg-red-950/20 border border-red-900/30 rounded-lg select-none">
+                          Read Only
+                        </span>
                       </>
                     )}
                   </div>
@@ -556,8 +629,11 @@ export const WorkspaceDashboard: React.FC = () => {
                 {/* Render Owner first */}
                 <div className="flex items-center justify-between p-3 rounded-xl bg-brand-500/5 border border-brand-500/20">
                   <div>
-                    <span className="text-sm font-medium text-slate-100">Owner (ID: {selectedProject.owner})</span>
-                    <span className="text-[10px] bg-brand-500/20 text-brand-300 px-2 py-0.5 rounded ml-2.5 font-bold uppercase">
+                    <span className="text-sm font-medium text-slate-100 flex items-center gap-1.5 flex-wrap">
+                      <span>{selectedProject.ownerName || "Workspace Owner"}</span>
+                      <span className="text-xs text-slate-400 font-normal">(@{selectedProject.ownerUsername || "owner"})</span>
+                    </span>
+                    <span className="text-[10px] bg-brand-500/20 text-brand-300 px-2 py-0.5 rounded font-bold uppercase mt-1 inline-block sm:mt-0 sm:ml-2.5">
                       Workspace Owner
                     </span>
                   </div>
@@ -572,8 +648,9 @@ export const WorkspaceDashboard: React.FC = () => {
                       className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60 border border-slate-850 hover:bg-slate-900 transition-colors"
                     >
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="text-sm font-medium text-slate-200 truncate max-w-sm">
-                          User ID: {member.userId}
+                        <div className="text-sm font-medium text-slate-200 truncate max-w-sm flex items-center gap-1.5">
+                          <span>{member.name || "Unknown"}</span>
+                          <span className="text-xs text-slate-500 font-normal">(@{member.username || "unknown"})</span>
                         </div>
                         <span className="text-[9px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded font-semibold border border-slate-700">
                           {member.role}
@@ -642,6 +719,16 @@ const ActivityFeedPanel: React.FC<ActivityFeedPanelProps> = ({ projectId, onClos
         return `${actor} invited ${invitee} as a ${event.payload?.role || "member"}`;
       case "MEMBER_REMOVED":
         return `${actor} removed member (ID: ${event.payload?.targetUserId})`;
+      case "TASK_CREATED":
+        return `${actor} created task "${event.payload?.title || "Untitled"}"`;
+      case "STATUS_CHANGED":
+        return `${actor} moved task "${event.payload?.title || "Task"}" to "${event.payload?.newStatus}"`;
+      case "TASK_DELETED":
+        return `${actor} deleted task "${event.payload?.title || "Untitled"}"`;
+      case "ASSIGNEE_CHANGED":
+        return `${actor} updated assignee for task "${event.payload?.title || "Task"}"`;
+      case "TASK_UPDATED":
+        return `${actor} updated task ${event.payload?.field || "field"} of "${event.payload?.title || "Task"}"`;
       default:
         return `${actor} performed action: ${event.eventType}`;
     }
@@ -650,13 +737,19 @@ const ActivityFeedPanel: React.FC<ActivityFeedPanelProps> = ({ projectId, onClos
   const getEventIconColor = (eventType: string) => {
     switch (eventType) {
       case "PROJECT_CREATED":
+      case "TASK_CREATED":
         return "bg-green-500/10 text-green-400 border border-green-500/20";
       case "PROJECT_UPDATED":
+      case "TASK_UPDATED":
         return "bg-brand-500/10 text-brand-400 border border-brand-500/20";
       case "MEMBER_INVITED":
+      case "ASSIGNEE_CHANGED":
         return "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20";
       case "MEMBER_REMOVED":
+      case "TASK_DELETED":
         return "bg-red-500/10 text-red-400 border border-red-500/20";
+      case "STATUS_CHANGED":
+        return "bg-amber-500/10 text-amber-400 border border-amber-500/20";
       default:
         return "bg-slate-800 text-slate-400 border border-slate-700";
     }

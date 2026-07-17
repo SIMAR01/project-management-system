@@ -3,7 +3,7 @@ import { Schema, model, Document } from "mongoose";
 
 // ─── Event Type Union ─────────────────────────────────────────────────────────
 
-export type TaskEventType = "TASK_CREATED" | "STATUS_CHANGED" | "TASK_DELETED";
+export type TaskEventType = "TASK_CREATED" | "STATUS_CHANGED" | "TASK_DELETED" | "ASSIGNEE_CHANGED" | "TASK_UPDATED";
 
 // ─── Interface ────────────────────────────────────────────────────────────────
 
@@ -22,6 +22,8 @@ export interface ITaskEvent extends Document {
    * - TASK_CREATED  → { title, description, assigneeId, status, projectId }
    * - STATUS_CHANGED → { previousStatus, newStatus }
    * - TASK_DELETED   → { taskId, title }
+   * - ASSIGNEE_CHANGED → { previousAssigneeId, newAssigneeId }
+   * - TASK_UPDATED   → { field, previousValue, newValue }
    */
   payload: Record<string, any>;
   timestamp: Date;
@@ -51,7 +53,7 @@ const taskEventSchema = new Schema<ITaskEvent>(
     },
     eventType: {
       type: String,
-      enum: ["TASK_CREATED", "STATUS_CHANGED", "TASK_DELETED"] as TaskEventType[],
+      enum: ["TASK_CREATED", "STATUS_CHANGED", "TASK_DELETED", "ASSIGNEE_CHANGED", "TASK_UPDATED"] as TaskEventType[],
       required: true,
     },
     payload: {

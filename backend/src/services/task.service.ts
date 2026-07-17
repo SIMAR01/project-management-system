@@ -36,6 +36,39 @@ export interface GetTasksQuery {
 
 export class TaskService {
   /**
+   * Helper to enrich tasks with their assignee's profile details.
+   */
+  public static async enrichTasks(tasks: any[]): Promise<any[]> {
+    if (tasks.length === 0) return [];
+
+    const assigneeIds = new Set<string>();
+    for (const t of tasks) {
+      if (t.assigneeId) assigneeIds.add(t.assigneeId);
+    }
+
+    const users = await User.find({ "uuid.id": { $in: Array.from(assigneeIds) } }).lean();
+    const userMap = new Map<string, any>();
+    for (const u of users) {
+      userMap.set(u.uuid.id, u);
+    }
+
+    return tasks.map((t) => {
+      const tObj = typeof t.toObject === "function" ? t.toObject() : t;
+      const assigneeUser = tObj.assigneeId ? userMap.get(tObj.assigneeId) : null;
+      return {
+        ...tObj,
+        assignee: assigneeUser
+          ? {
+              name: assigneeUser.name,
+              username: assigneeUser.username,
+              email: assigneeUser.email,
+            }
+          : null,
+      };
+    });
+  }
+
+  /**
    * Creates a new task inside the given project workspace.
    *
    * Write order:
@@ -78,18 +111,13 @@ export class TaskService {
       throw new ApiError(500, "Failed to record task creation event. Task rolled back.");
     }
 
-    // 3. Real-time broadcast to all project room members
-    emitProjectEvent(projectId, "task:created", {
-      taskId: savedTask.taskId,
-      projectId,
-      title: savedTask.title,
-      description: savedTask.description ?? null,
-      assigneeId: savedTask.assigneeId ?? null,
-      status: savedTask.status,
-      createdAt: savedTask.createdAt,
-    });
+    const enriched = await TaskService.enrichTasks([savedTask]);
+    const enrichedTask = enriched[0];
 
-    return savedTask;
+    // 3. Real-time broadcast to all project room members
+    emitProjectEvent(projectId, "task:created", enrichedTask);
+
+    return enrichedTask;
   }
 
   /**
@@ -121,8 +149,10 @@ export class TaskService {
         .lean(),
     ]);
 
+    const enrichedTasks = await TaskService.enrichTasks(tasks);
+
     return {
-      tasks: tasks as unknown as ITask[],
+      tasks: enrichedTasks as unknown as ITask[],
       pagination: {
         page,
         limit,
@@ -133,19 +163,20 @@ export class TaskService {
   }
 
   /**
-   * Transitions a task's status using an event-sourced two-step pattern:
-   *   1. Read current state — capture originalStatus for the event payload diff.
-   *   2. Write STATUS_CHANGED event to the immutable log.
-   *   3. Update the task read model atomically.
-   *      → On event write failure: skip read model update and throw.
-   *      → On read model update failure: compensate by deleting the event just written.
+   * Updates any details of a task (title, description, assigneeId, status).
+   * Writes corresponding events to the immutable event log and handles rollbacks on failure.
    *
-   * Emits: `task:status_changed` to the project room upon success.
+   * Emits: `task:updated` (and `task:status_changed` if status changed) to the project room.
    */
-  public static async updateTaskStatus(
+  public static async updateTask(
     taskId: string,
     projectId: string,
-    newStatus: TaskStatus,
+    updates: {
+      title?: string;
+      description?: string | null;
+      assigneeId?: string | null;
+      status?: TaskStatus;
+    },
     actorId: string
   ): Promise<ITask> {
     // Pre-flight: verify task exists and belongs to this project
@@ -154,28 +185,75 @@ export class TaskService {
       throw new ApiError(404, "Task not found or has been deleted");
     }
 
-    const previousStatus = existingTask.status;
+    const eventsToCreate: any[] = [];
+    const fieldsToUpdate: Record<string, any> = {};
 
-    // Guard: reject no-op status transitions
-    if (previousStatus === newStatus) {
-      throw new ApiError(400, `Task is already in '${newStatus}' status`);
+    // 1. Check title update
+    if (updates.title !== undefined && updates.title !== existingTask.title) {
+      fieldsToUpdate.title = updates.title;
+      eventsToCreate.push({
+        taskId,
+        projectId,
+        userId: actorId,
+        eventType: "TASK_UPDATED",
+        payload: { field: "title", previousValue: existingTask.title, newValue: updates.title, title: existingTask.title },
+      });
     }
 
-    // 1. Write the immutable STATUS_CHANGED event first — captures the full diff
-    const eventDoc = await TaskEvent.create({
-      taskId,
-      projectId,
-      userId: actorId,
-      eventType: "STATUS_CHANGED",
-      payload: { previousStatus, newStatus },
-    });
+    // 2. Check description update
+    const previousDesc = existingTask.description || null;
+    const newDesc = updates.description === undefined ? undefined : (updates.description || null);
+    if (newDesc !== undefined && newDesc !== previousDesc) {
+      fieldsToUpdate.description = newDesc;
+      eventsToCreate.push({
+        taskId,
+        projectId,
+        userId: actorId,
+        eventType: "TASK_UPDATED",
+        payload: { field: "description", previousValue: previousDesc, newValue: newDesc, title: existingTask.title },
+      });
+    }
 
-    // 2. Update the read model — compensate on failure
+    // 3. Check assignee update
+    const previousAssignee = existingTask.assigneeId || null;
+    const newAssignee = updates.assigneeId === undefined ? undefined : (updates.assigneeId || null);
+    if (newAssignee !== undefined && newAssignee !== previousAssignee) {
+      fieldsToUpdate.assigneeId = newAssignee;
+      eventsToCreate.push({
+        taskId,
+        projectId,
+        userId: actorId,
+        eventType: "ASSIGNEE_CHANGED",
+        payload: { previousAssigneeId: previousAssignee, newAssigneeId: newAssignee, title: existingTask.title },
+      });
+    }
+
+    // 4. Check status update
+    if (updates.status !== undefined && updates.status !== existingTask.status) {
+      fieldsToUpdate.status = updates.status;
+      eventsToCreate.push({
+        taskId,
+        projectId,
+        userId: actorId,
+        eventType: "STATUS_CHANGED",
+        payload: { previousStatus: existingTask.status, newStatus: updates.status, title: existingTask.title },
+      });
+    }
+
+    if (Object.keys(fieldsToUpdate).length === 0) {
+      const enriched = await TaskService.enrichTasks([existingTask]);
+      return enriched[0];
+    }
+
+    // Write events
+    const createdEvents = await TaskEvent.insertMany(eventsToCreate);
+
+    // Update read model
     let updatedTask: ITask | null;
     try {
       updatedTask = await Task.findOneAndUpdate(
         { taskId, projectId, isDeleted: false },
-        { $set: { status: newStatus } },
+        { $set: fieldsToUpdate },
         { new: true }
       );
 
@@ -183,22 +261,30 @@ export class TaskService {
         throw new Error("Task document disappeared during update");
       }
     } catch (updateErr) {
-      // Compensate: remove the event so the log stays consistent
-      await TaskEvent.deleteOne({ _id: eventDoc._id }).catch(() => {});
-      throw new ApiError(500, "Failed to update task status. Event rolled back.");
+      // Compensate: remove the events just written
+      const eventIds = createdEvents.map((e) => e._id);
+      await TaskEvent.deleteMany({ _id: { $in: eventIds } }).catch(() => {});
+      throw new ApiError(500, "Failed to update task. Events rolled back.");
     }
 
-    // 3. Real-time broadcast
-    emitProjectEvent(projectId, "task:status_changed", {
-      taskId,
-      projectId,
-      previousStatus,
-      newStatus,
-      updatedAt: updatedTask.updatedAt,
-      actorId,
-    });
+    const enriched = await TaskService.enrichTasks([updatedTask]);
+    const enrichedTask = enriched[0];
 
-    return updatedTask;
+    // Real-time broadcast
+    if (fieldsToUpdate.status) {
+      emitProjectEvent(projectId, "task:status_changed", {
+        taskId,
+        projectId,
+        previousStatus: existingTask.status,
+        newStatus: fieldsToUpdate.status,
+        updatedAt: enrichedTask.updatedAt,
+        actorId,
+      });
+    }
+
+    emitProjectEvent(projectId, "task:updated", enrichedTask);
+
+    return enrichedTask;
   }
 
   /**
@@ -247,6 +333,78 @@ export class TaskService {
     // 3. Real-time broadcast
     emitProjectEvent(projectId, "task:deleted", {
       taskId,
+      projectId,
+      actorId,
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Bulk soft-deletes a list of tasks inside a project.
+   *
+   * Write order:
+   *   1. Flip isDeleted on the read models.
+   *   2. Append TASK_DELETED events to the event store.
+   *      → On failure: compensate by reverting isDeleted to false.
+   *
+   * Emits: `task:bulk_deleted` to the project room.
+   */
+  public static async bulkDeleteTasks(
+    taskIds: string[],
+    projectId: string,
+    actorId: string
+  ): Promise<{ success: boolean }> {
+    if (taskIds.length === 0) {
+      return { success: true };
+    }
+
+    // Verify tasks exist in this project and are active
+    const tasks = await Task.find({
+      taskId: { $in: taskIds },
+      projectId,
+      isDeleted: false,
+    });
+
+    if (tasks.length === 0) {
+      throw new ApiError(404, "No active tasks found matching the provided IDs");
+    }
+
+    const foundTaskIds = tasks.map((t) => t.taskId);
+
+    // 1. Flip isDeleted on the read models
+    await Task.updateMany(
+      { taskId: { $in: foundTaskIds }, projectId },
+      { $set: { isDeleted: true } }
+    );
+
+    // 2. Write events — compensate on failure
+    const eventsToCreate = tasks.map((t) => ({
+      taskId: t.taskId,
+      projectId,
+      userId: actorId,
+      eventType: "TASK_DELETED",
+      payload: {
+        taskId: t.taskId,
+        title: t.title,
+      },
+    }));
+
+    let createdEvents: any[] = [];
+    try {
+      createdEvents = await TaskEvent.insertMany(eventsToCreate);
+    } catch (eventErr) {
+      // Compensate: revert soft-delete
+      await Task.updateMany(
+        { taskId: { $in: foundTaskIds }, projectId },
+        { $set: { isDeleted: false } }
+      ).catch(() => {});
+      throw new ApiError(500, "Failed to record bulk deletion events. Tasks restore attempted.");
+    }
+
+    // 3. Real-time broadcast
+    emitProjectEvent(projectId, "task:bulk_deleted", {
+      taskIds: foundTaskIds,
       projectId,
       actorId,
     });

@@ -2,13 +2,10 @@ import React, { useState } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import { SessionModal } from '../../auth/components/SessionModal';
 import { useFetchSessionsQuery } from '../../auth/hooks/useAuthMutations';
-import { WorkspaceDashboard } from '../../projects/components/WorkspaceDashboard';
+import { Outlet } from 'react-router-dom';
 import {
   FolderKanban,
-  Activity,
   LogOut,
-  Settings,
-  HelpCircle,
   Layers
 } from 'lucide-react';
 
@@ -38,9 +35,6 @@ export const DashboardLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Workspaces', href: '#workspaces', icon: FolderKanban, isActive: true },
-    { label: 'System Activity', href: '#activity', icon: Activity },
-    { label: 'Preferences', href: '#settings', icon: Settings },
-    { label: 'Documentation', href: '#help', icon: HelpCircle },
   ];
 
   // Projects query removed as it is now managed inside WorkspaceDashboard component
@@ -126,9 +120,9 @@ export const DashboardLayout: React.FC = () => {
           </nav>
         </aside>
 
-        {/* Right Content Pane: Project Workspace list */}
+        {/* Right Content Pane: Dynamically rendered via Router Outlet */}
         <main className="flex-1 overflow-x-hidden">
-          <WorkspaceDashboard />
+          <Outlet />
         </main>
       </div>
 

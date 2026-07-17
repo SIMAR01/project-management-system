@@ -13,6 +13,7 @@ export interface IProject extends Document {
   owner: string; // references user.uuid.id
   members: IProjectMember[];
   isArchived: boolean;
+  isDeleted: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +54,10 @@ const projectSchema = new Schema<IProject>(
       },
     ],
     isArchived: {
+      type: Boolean,
+      default: false,
+    },
+    isDeleted: {
       type: Boolean,
       default: false,
     },

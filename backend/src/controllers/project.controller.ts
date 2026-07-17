@@ -131,9 +131,10 @@ export class ProjectController {
     }
 
     const projects = await ProjectService.getUserProjects(userId);
+    const enriched = await ProjectService.enrichProjects(projects);
 
     res.status(200).json(
-      new ApiResponse(200, projects, "User project workspaces retrieved successfully")
+      new ApiResponse(200, enriched, "User project workspaces retrieved successfully")
     );
   });
 
@@ -147,9 +148,10 @@ export class ProjectController {
     }
 
     const projects = await ProjectService.getOwnedProjects(userId);
+    const enriched = await ProjectService.enrichProjects(projects);
 
     res.status(200).json(
-      new ApiResponse(200, projects, "Owned project workspaces retrieved successfully")
+      new ApiResponse(200, enriched, "Owned project workspaces retrieved successfully")
     );
   });
 
@@ -159,9 +161,10 @@ export class ProjectController {
   public static getDetails = asyncHandler(async (req: Request, res: Response): Promise<void> => {
     // Already loaded and verified by checkMembership middleware
     const project = req.project;
+    const enriched = await ProjectService.enrichProjects([project]);
 
     res.status(200).json(
-      new ApiResponse(200, project, "Project workspace details retrieved successfully")
+      new ApiResponse(200, enriched[0], "Project workspace details retrieved successfully")
     );
   });
 

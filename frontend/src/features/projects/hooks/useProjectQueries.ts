@@ -28,6 +28,20 @@ export const useWorkspacesQuery = () => {
 };
 
 /**
+ * Hook to retrieve details of a single project workspace.
+ */
+export const useWorkspaceQuery = (projectId: string) => {
+  return useQuery<ProjectWorkspace>({
+    queryKey: ["workspace", projectId],
+    queryFn: async () => {
+      const response = await axiosClient.get<ApiResponse<any>>(`/projects/${projectId}`);
+      return mapProject(response.data.data);
+    },
+    enabled: !!projectId,
+  });
+};
+
+/**
  * Hook to retrieve the chronological activity timeline for a workspace.
  */
 export const useProjectActivityQuery = (projectId: string, enabled: boolean = true) => {

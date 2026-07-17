@@ -21,13 +21,19 @@ const AuthLayout = React.lazy(() =>
 const DashboardLayout = React.lazy(() =>
   import('./features/dashboard/components/DashboardLayout').then((m) => ({ default: m.DashboardLayout }))
 );
+const WorkspaceDashboard = React.lazy(() =>
+  import('./features/projects/components/WorkspaceDashboard').then((m) => ({ default: m.WorkspaceDashboard }))
+);
+const KanbanBoard = React.lazy(() =>
+  import('./features/tasks/components/KanbanBoard').then((m) => ({ default: m.KanbanBoard }))
+);
 
 // Loader component for Route Suspense
 const FullScreenLoader: React.FC = () => (
   <div className="min-h-screen w-full flex flex-col items-center justify-center bg-slate-950 text-slate-100">
     <div className="flex flex-col items-center">
       <Loader2 className="w-10 h-10 animate-spin text-brand-500 mb-3.5" />
-      <p className="text-sm text-slate-400 font-semibold tracking-wider uppercase">Loading console...</p>
+      <p className="text-sm text-slate-400 font-semibold tracking-wider uppercase">Loading...</p>
     </div>
   </div>
 );
@@ -79,7 +85,10 @@ export const App: React.FC = () => {
                     <DashboardLayout />
                   </ProtectedRoute>
                 }
-              />
+              >
+                <Route index element={<WorkspaceDashboard />} />
+                <Route path="projects/:projectId/tasks" element={<KanbanBoard />} />
+              </Route>
 
               {/* Catch-all Routing Redirects */}
               <Route path="*" element={<Navigate to="/dashboard" replace />} />

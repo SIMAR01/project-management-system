@@ -4,8 +4,9 @@ import { validate } from "../middleware/validate.middleware";
 import { idempotencyMiddleware } from "../middleware/idempotency.middleware";
 import {
   createTaskSchema,
-  updateTaskStatusSchema,
+  updateTaskSchema,
   getTasksQuerySchema,
+  bulkDeleteTasksSchema,
 } from "../validations/task.validation";
 
 /**
@@ -51,12 +52,21 @@ router.post(
 router.get("/:taskId/events", TaskController.getTaskEvents);
 
 // ─── PATCH /projects/:projectId/tasks/:taskId ────────────────────────────────
-// Event-sourced status transition — writes STATUS_CHANGED event before updating
+// General task updates — title, description, assignee, status
 router.patch(
   "/:taskId",
   idempotencyMiddleware,
-  validate(updateTaskStatusSchema),
-  TaskController.updateTaskStatus
+  validate(updateTaskSchema),
+  TaskController.updateTask
+);
+
+// ─── DELETE /projects/:projectId/tasks/bulk ─────────────────────────────────
+// Bulk soft delete — sets isDeleted=true for multiple tasks
+router.delete(
+  "/bulk",
+  idempotencyMiddleware,
+  validate(bulkDeleteTasksSchema),
+  TaskController.bulkDeleteTasks
 );
 
 // ─── DELETE /projects/:projectId/tasks/:taskId ───────────────────────────────

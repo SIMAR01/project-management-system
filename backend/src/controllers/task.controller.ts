@@ -89,7 +89,14 @@ export class TaskController {
    * which reads the current state first, writes a STATUS_CHANGED event log entry
    * containing the full before/after diff, then atomically updates the read model.
    */
-  public static updateTaskStatus = asyncHandler(
+  /**
+   * PATCH /projects/:projectId/tasks/:taskId
+   *
+   * Updates any details of a task (title, description, assigneeId, status).
+   * The controller delegates to the service which reads the current state first,
+   * writes events to the immutable event log, then updates the read model.
+   */
+  public static updateTask = asyncHandler(
     async (req: Request, res: Response): Promise<void> => {
       const { projectId, taskId } = req.params as {
         projectId: string;
@@ -101,17 +108,22 @@ export class TaskController {
         throw new ApiError(401, "User session not found");
       }
 
-      const { status } = req.body as { status: TaskStatus };
+      const updates = req.body as {
+        title?: string;
+        description?: string | null;
+        assigneeId?: string | null;
+        status?: TaskStatus;
+      };
 
-      const updatedTask = await TaskService.updateTaskStatus(
+      const updatedTask = await TaskService.updateTask(
         taskId,
         projectId,
-        status,
+        updates,
         actorId
       );
 
       res.status(200).json(
-        new ApiResponse(200, updatedTask, "Task status updated successfully")
+        new ApiResponse(200, updatedTask, "Task updated successfully")
       );
     }
   );
@@ -139,6 +151,30 @@ export class TaskController {
 
       res.status(200).json(
         new ApiResponse(200, null, "Task deleted successfully")
+      );
+    }
+  );
+
+  /**
+   * DELETE /projects/:projectId/tasks/bulk
+   *
+   * Performs bulk soft-delete on multiple tasks inside the project workspace.
+   */
+  public static bulkDeleteTasks = asyncHandler(
+    async (req: Request, res: Response): Promise<void> => {
+      const { projectId } = req.params as { projectId: string };
+      const actorId = req.user?.uuid?.id;
+
+      if (!actorId) {
+        throw new ApiError(401, "User session not found");
+      }
+
+      const { taskIds } = req.body as { taskIds: string[] };
+
+      await TaskService.bulkDeleteTasks(taskIds, projectId, actorId);
+
+      res.status(200).json(
+        new ApiResponse(200, null, "Tasks deleted successfully")
       );
     }
   );
